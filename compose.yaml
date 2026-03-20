@@ -1,0 +1,24 @@
+services:
+  darknight:
+    build: .
+    container_name: darknight
+    environment:
+      TZ: Asia/Seoul
+      REPORT_HOUR: "8"
+      REPORT_MINUTE: "0"
+      RUN_ON_START: "false"
+      INPUT_CSV: data/results.csv
+      GM_ID: G101
+      UPCOMING_URL: https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101
+      OUTPUT_DIR: reports
+      CACHE_DIR: .cache
+      RECENT_GAMES: "5"
+      SEARCH_WINDOW: "12"
+      SYNC_PROBE_COUNT: "6"
+      SYNC_STOP_AFTER_MISS: "2"
+      USE_BROWSER: "true"
+      HEADED: "false"
+    volumes:
+      - ./data:/app/data
+      - ./.cache:/app/.cache
+      - ./reports:/app/reports
