@@ -19,13 +19,15 @@ def build_command() -> list[str]:
     command = [
         "python",
         "main.py",
-        "predict-today",
+        "predict-all",
         "--input",
         os.getenv("INPUT_CSV", "data/results.csv"),
         "--url",
         os.getenv("UPCOMING_URL", "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101"),
         "--output-dir",
         os.getenv("OUTPUT_DIR", "reports"),
+        "--analysis-dir",
+        os.getenv("ANALYSIS_DIR", "analysis"),
         "--cache-dir",
         os.getenv("CACHE_DIR", ".cache"),
         "--recent-games",
@@ -41,6 +43,63 @@ def build_command() -> list[str]:
         command.append("--browser")
     if env_flag("HEADED", False):
         command.append("--headed")
+
+    return command
+
+
+def build_backtest_command() -> list[str]:
+    command = [
+        "python",
+        "main.py",
+        "backtest",
+        "--input",
+        os.getenv("INPUT_CSV", "data/results.csv"),
+        "--output-dir",
+        os.getenv("ANALYSIS_DIR", "analysis"),
+        "--recent-games",
+        os.getenv("RECENT_GAMES", "5"),
+        "--test-ratio",
+        os.getenv("BACKTEST_TEST_RATIO", "0.2"),
+        "--by-league",
+    ]
+
+    sport = os.getenv("BACKTEST_SPORT")
+    if sport:
+        command.extend(["--sport", sport])
+
+    league = os.getenv("BACKTEST_LEAGUE")
+    if league:
+        command.extend(["--league", league])
+
+    return command
+
+
+def build_simulation_command() -> list[str]:
+    command = [
+        "python",
+        "main.py",
+        "simulate-bets",
+        "--input",
+        os.getenv("INPUT_CSV", "data/results.csv"),
+        "--output-dir",
+        os.getenv("ANALYSIS_DIR", "analysis"),
+        "--recent-games",
+        os.getenv("RECENT_GAMES", "5"),
+        "--lookback-days",
+        os.getenv("SIMULATION_LOOKBACK_DAYS", "30"),
+        "--edge-threshold",
+        os.getenv("SIMULATION_EDGE_THRESHOLD", "0.05"),
+        "--stake",
+        os.getenv("SIMULATION_STAKE", "1.0"),
+    ]
+
+    sport = os.getenv("SIMULATION_SPORT")
+    if sport:
+        command.extend(["--sport", sport])
+
+    league = os.getenv("SIMULATION_LEAGUE")
+    if league:
+        command.extend(["--league", league])
 
     return command
 
@@ -78,11 +137,22 @@ def next_run_time(now: datetime, hour: int, minute: int) -> datetime:
 def run_prediction() -> None:
     Path(os.getenv("OUTPUT_DIR", "reports")).mkdir(parents=True, exist_ok=True)
     Path(os.getenv("CACHE_DIR", ".cache")).mkdir(parents=True, exist_ok=True)
+    Path(os.getenv("ANALYSIS_DIR", "analysis")).mkdir(parents=True, exist_ok=True)
 
     sync_command = build_sync_command()
     print(f"[scheduler] syncing: {' '.join(sync_command)}", flush=True)
     sync_completed = subprocess.run(sync_command, check=False)
     print(f"[scheduler] sync exit code: {sync_completed.returncode}", flush=True)
+
+    backtest_command = build_backtest_command()
+    print(f"[scheduler] backtesting: {' '.join(backtest_command)}", flush=True)
+    backtest_completed = subprocess.run(backtest_command, check=False)
+    print(f"[scheduler] backtest exit code: {backtest_completed.returncode}", flush=True)
+
+    simulation_command = build_simulation_command()
+    print(f"[scheduler] simulating: {' '.join(simulation_command)}", flush=True)
+    simulation_completed = subprocess.run(simulation_command, check=False)
+    print(f"[scheduler] simulation exit code: {simulation_completed.returncode}", flush=True)
 
     command = build_command()
     print(f"[scheduler] running: {' '.join(command)}", flush=True)

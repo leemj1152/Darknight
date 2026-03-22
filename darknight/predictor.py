@@ -183,7 +183,7 @@ class FormPredictor:
         )
 
     def fit(self, frame: pd.DataFrame) -> None:
-        dataset = self._build_dataset(_normalize_frame(frame))
+        dataset = self.get_training_dataset(frame)
         if dataset.empty:
             raise ValueError("Not enough training rows for the form model.")
         self.model.fit(dataset[FORM_FEATURE_COLUMNS], dataset["home_win"])
@@ -235,6 +235,21 @@ class FormPredictor:
             )
         return pd.DataFrame(rows)
 
+    def get_training_dataset(self, frame: pd.DataFrame) -> pd.DataFrame:
+        return self._build_dataset(_normalize_frame(frame))
+
+    def feature_importance(self) -> pd.DataFrame:
+        classifier = self.model.named_steps["classifier"]
+        coefficients = classifier.coef_[0]
+        total = sum(abs(value) for value in coefficients) or 1.0
+        return pd.DataFrame(
+            {
+                "feature": FORM_FEATURE_COLUMNS,
+                "coefficient": coefficients,
+                "importance_share": [abs(value) / total for value in coefficients],
+            }
+        ).sort_values("importance_share", ascending=False).reset_index(drop=True)
+
 
 class HybridPredictor:
     def __init__(self, recent_games: int = 5) -> None:
@@ -250,7 +265,7 @@ class HybridPredictor:
     def fit(self, frame: pd.DataFrame) -> None:
         normalized = _normalize_frame(frame)
         self.form_predictor.fit(normalized)
-        dataset = self._build_dataset(normalized)
+        dataset = self.get_training_dataset(normalized)
         if dataset.empty:
             raise ValueError("Not enough training rows for the hybrid model.")
         self.model.fit(dataset[HYBRID_FEATURE_COLUMNS], dataset["home_win"])
@@ -336,6 +351,21 @@ class HybridPredictor:
                 }
             )
         return pd.DataFrame(rows)
+
+    def get_training_dataset(self, frame: pd.DataFrame) -> pd.DataFrame:
+        return self._build_dataset(_normalize_frame(frame))
+
+    def feature_importance(self) -> pd.DataFrame:
+        classifier = self.model.named_steps["classifier"]
+        coefficients = classifier.coef_[0]
+        total = sum(abs(value) for value in coefficients) or 1.0
+        return pd.DataFrame(
+            {
+                "feature": HYBRID_FEATURE_COLUMNS,
+                "coefficient": coefficients,
+                "importance_share": [abs(value) / total for value in coefficients],
+            }
+        ).sort_values("importance_share", ascending=False).reset_index(drop=True)
 
 
 MatchPredictor = FormPredictor

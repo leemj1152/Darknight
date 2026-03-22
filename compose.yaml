@@ -11,9 +11,14 @@ services:
       GM_ID: G101
       UPCOMING_URL: https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101
       OUTPUT_DIR: reports
+      ANALYSIS_DIR: analysis
       CACHE_DIR: .cache
       RECENT_GAMES: "5"
       SEARCH_WINDOW: "12"
+      BACKTEST_TEST_RATIO: "0.2"
+      SIMULATION_LOOKBACK_DAYS: "30"
+      SIMULATION_EDGE_THRESHOLD: "0.05"
+      SIMULATION_STAKE: "1.0"
       SYNC_PROBE_COUNT: "6"
       SYNC_STOP_AFTER_MISS: "2"
       USE_BROWSER: "true"
@@ -21,4 +26,5 @@ services:
     volumes:
       - ./data:/app/data
       - ./.cache:/app/.cache
+      - ./analysis:/app/analysis
       - ./reports:/app/reports

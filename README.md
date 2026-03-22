@@ -109,6 +109,29 @@ python main.py predict-hybrid --input data/results.csv --home-team "샬럿H" --a
 
 `predict` is an alias for `predict-hybrid`.
 
+## Backtest
+
+You can evaluate how the models perform on historical data using a time-based train/test split.
+
+```bash
+python main.py backtest --input data/results.csv --sport "농구" --league "NBA" --test-ratio 0.2
+python main.py backtest --input data/results.csv --sport "축구" --by-league --output-dir analysis
+```
+
+## Mock Betting
+
+You can simulate three agents over the recent historical window.
+
+```bash
+python main.py simulate-bets --input data/results.csv --lookback-days 30 --output-dir analysis
+```
+
+This writes:
+
+- `analysis/simulation_summary.csv`
+- `analysis/simulation_bets.csv`
+- `analysis/simulation_daily.csv`
+
 ## Model cache
 
 `predict-form`, `predict-hybrid`, and `predict-today` can store trained models in `.cache` by default.
@@ -129,6 +152,8 @@ You can generate a report for today's upcoming matches from an open Betman page.
 
 ```bash
 python main.py predict-today --input data/results.csv --url "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101" --browser --output-dir reports
+python main.py predict-round --input data/results.csv --url "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101" --browser --output-dir reports
+python main.py predict-all --input data/results.csv --url "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101" --browser --output-dir reports
 ```
 
 Outputs:
@@ -180,8 +205,11 @@ Default container behavior:
 - runs `python docker/scheduler.py`
 - waits until the next scheduled time
 - runs `sync-results` first
-- executes `predict-today`
-- saves reports under `/app/reports`
+- runs `backtest` and writes analysis files
+- runs `simulate-bets` and writes mock betting ROI files
+- executes `predict-all`
+- saves analysis under `/app/analysis`
+- saves both daily and round reports under `/app/reports`
 - reuses model caches under `/app/.cache`
 
 Useful environment variables:
@@ -194,9 +222,14 @@ Useful environment variables:
 - `UPCOMING_URL`: page for today's matches
 - `UPCOMING_GMTS`: optional fixed gmTs. If omitted, the app probes forward from the latest known round and collects all target-date matches it finds
 - `OUTPUT_DIR`: report directory, default `reports`
+- `ANALYSIS_DIR`: backtest output directory, default `analysis`
+- `SIMULATION_LOOKBACK_DAYS`: recent history window for mock betting, default `30`
+- `SIMULATION_EDGE_THRESHOLD`: minimum edge for form/hybrid bets, default `0.05`
+- `SIMULATION_STAKE`: flat unit stake per simulated bet, default `1.0`
 - `CACHE_DIR`: cache directory, default `.cache`
 - `RECENT_GAMES`: recent game window, default `5`
 - `SEARCH_WINDOW`: how many future `gmTs` values to scan for today's matches
+- `BACKTEST_TEST_RATIO`: test split fraction for the daily backtest job
 - `SYNC_PROBE_COUNT`: how many completed `gmTs` values to probe ahead from the latest stored result round
 - `SYNC_STOP_AFTER_MISS`: stop sync probing after this many consecutive misses
 - `USE_BROWSER`: if `true`, use Chromium rendering

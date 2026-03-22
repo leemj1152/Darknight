@@ -18,6 +18,7 @@ ENV/
 .cache/
 reports/
 data/
+analysis/
 
 # OS / editor
 .DS_Store

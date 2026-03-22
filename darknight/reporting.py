@@ -27,6 +27,21 @@ def save_daily_report(
     return csv_path, md_path
 
 
+def save_round_report(
+    report_frame: pd.DataFrame,
+    output_dir: str | Path,
+    gm_ts: str,
+) -> tuple[Path, Path]:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    csv_path = output_path / f"round_predictions_{gm_ts}.csv"
+    md_path = output_path / f"round_predictions_{gm_ts}.md"
+    report_frame.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    md_path.write_text(to_markdown_round_report(report_frame, gm_ts), encoding="utf-8")
+    return csv_path, md_path
+
+
 def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:
     lines = [f"# Daily Predictions {target_date.isoformat()}", ""]
     if report_frame.empty:
@@ -34,6 +49,18 @@ def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:
         return "\n".join(lines)
 
     ordered = report_frame.sort_values(["played_at", "sport", "league", "match_seq"])
+    top_picks = ordered[ordered["top_pick_rank"].notna()].sort_values("top_pick_rank") if "top_pick_rank" in ordered.columns else ordered.iloc[0:0]
+    if not top_picks.empty:
+        lines.append("## Top Picks")
+        lines.append("")
+        for _, row in top_picks.iterrows():
+            lines.append(
+                f"- #{int(row['top_pick_rank'])} {row['home_team']} vs {row['away_team']} | "
+                f"grade {row.get('bet_grade', '')} | "
+                f"hybrid ev={_format_optional_percent(row.get('expected_value_hybrid'))} | "
+                f"form ev={_format_optional_percent(row.get('expected_value_form'))}"
+            )
+        lines.append("")
     for _, row in ordered.iterrows():
         lines.append(
             f"- close {pd.to_datetime(row['close_at']).strftime('%H:%M') if pd.notna(row.get('close_at')) else '--:--'} "
@@ -43,6 +70,56 @@ def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:
             f"odds {row['odds_home_probability']:.2%} | "
             f"form {row['form_home_probability']:.2%} | "
             f"hybrid {row['hybrid_home_probability']:.2%} | "
+            f"pick odds={row.get('odds_pick', '')} form={row.get('form_pick', '')} hybrid={row.get('hybrid_pick', '')} | "
+            f"ev form={_format_optional_percent(row.get('expected_value_form'))} hybrid={_format_optional_percent(row.get('expected_value_hybrid'))} | "
+            f"grade {row.get('bet_grade', '')} rank={_format_rank(row.get('top_pick_rank'))} trust={row.get('league_trust_level', '')} | "
             f"gmTs {row.get('gm_ts', '')}"
         )
     return "\n".join(lines)
+
+
+def to_markdown_round_report(report_frame: pd.DataFrame, gm_ts: str) -> str:
+    lines = [f"# Round Predictions {gm_ts}", ""]
+    if report_frame.empty:
+        lines.append("No matches found.")
+        return "\n".join(lines)
+
+    ordered = report_frame.sort_values(["played_at", "sport", "league", "match_seq"])
+    top_picks = ordered[ordered["top_pick_rank"].notna()].sort_values("top_pick_rank") if "top_pick_rank" in ordered.columns else ordered.iloc[0:0]
+    if not top_picks.empty:
+        lines.append("## Top Picks")
+        lines.append("")
+        for _, row in top_picks.iterrows():
+            lines.append(
+                f"- #{int(row['top_pick_rank'])} {row['home_team']} vs {row['away_team']} | "
+                f"grade {row.get('bet_grade', '')} | "
+                f"hybrid ev={_format_optional_percent(row.get('expected_value_hybrid'))} | "
+                f"form ev={_format_optional_percent(row.get('expected_value_form'))}"
+            )
+        lines.append("")
+    for _, row in ordered.iterrows():
+        lines.append(
+            f"- close {pd.to_datetime(row['close_at']).strftime('%H:%M') if pd.notna(row.get('close_at')) else '--:--'} "
+            f"play {pd.to_datetime(row['played_at']).strftime('%m-%d %H:%M')} "
+            f"{row['sport']} {row['league']} "
+            f"{row['home_team']} vs {row['away_team']} | "
+            f"odds {row['odds_home_probability']:.2%} | "
+            f"form {row['form_home_probability']:.2%} | "
+            f"hybrid {row['hybrid_home_probability']:.2%} | "
+            f"pick odds={row.get('odds_pick', '')} form={row.get('form_pick', '')} hybrid={row.get('hybrid_pick', '')} | "
+            f"ev form={_format_optional_percent(row.get('expected_value_form'))} hybrid={_format_optional_percent(row.get('expected_value_hybrid'))} | "
+            f"grade {row.get('bet_grade', '')} rank={_format_rank(row.get('top_pick_rank'))} trust={row.get('league_trust_level', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _format_optional_percent(value: object) -> str:
+    if pd.isna(value):
+        return "-"
+    return f"{float(value):.2%}"
+
+
+def _format_rank(value: object) -> str:
+    if pd.isna(value):
+        return "-"
+    return str(int(float(value)))
