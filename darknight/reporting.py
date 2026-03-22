@@ -56,9 +56,9 @@ def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:
         for _, row in top_picks.iterrows():
             lines.append(
                 f"- #{int(row['top_pick_rank'])} {row['home_team']} vs {row['away_team']} | "
+                f"pick {row.get('recommended_side', '')} via {row.get('recommended_model', '')} | "
                 f"grade {row.get('bet_grade', '')} | "
-                f"hybrid ev={_format_optional_percent(row.get('expected_value_hybrid'))} | "
-                f"form ev={_format_optional_percent(row.get('expected_value_form'))}"
+                f"ev={_format_optional_percent(row.get('recommended_expected_value'))}"
             )
         lines.append("")
     for _, row in ordered.iterrows():
@@ -67,11 +67,10 @@ def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:
             f"play {pd.to_datetime(row['played_at']).strftime('%H:%M')} "
             f"{row['sport']} {row['league']} "
             f"{row['home_team']} vs {row['away_team']} | "
-            f"odds {row['odds_home_probability']:.2%} | "
-            f"form {row['form_home_probability']:.2%} | "
-            f"hybrid {row['hybrid_home_probability']:.2%} | "
-            f"pick odds={row.get('odds_pick', '')} form={row.get('form_pick', '')} hybrid={row.get('hybrid_pick', '')} | "
-            f"ev form={_format_optional_percent(row.get('expected_value_form'))} hybrid={_format_optional_percent(row.get('expected_value_hybrid'))} | "
+            f"market H={row['odds_home_probability']:.2%} A={_format_optional_percent(row.get('odds_away_probability'))} | "
+            f"form H={row['form_home_probability']:.2%} A={_format_optional_percent(row.get('form_away_probability'))} | "
+            f"hybrid H={row['hybrid_home_probability']:.2%} A={_format_optional_percent(row.get('hybrid_away_probability'))} | "
+            f"best {row.get('recommended_side', '')} via {row.get('recommended_model', '')} ev={_format_optional_percent(row.get('recommended_expected_value'))} | "
             f"grade {row.get('bet_grade', '')} rank={_format_rank(row.get('top_pick_rank'))} trust={row.get('league_trust_level', '')} | "
             f"gmTs {row.get('gm_ts', '')}"
         )
@@ -92,9 +91,9 @@ def to_markdown_round_report(report_frame: pd.DataFrame, gm_ts: str) -> str:
         for _, row in top_picks.iterrows():
             lines.append(
                 f"- #{int(row['top_pick_rank'])} {row['home_team']} vs {row['away_team']} | "
+                f"pick {row.get('recommended_side', '')} via {row.get('recommended_model', '')} | "
                 f"grade {row.get('bet_grade', '')} | "
-                f"hybrid ev={_format_optional_percent(row.get('expected_value_hybrid'))} | "
-                f"form ev={_format_optional_percent(row.get('expected_value_form'))}"
+                f"ev={_format_optional_percent(row.get('recommended_expected_value'))}"
             )
         lines.append("")
     for _, row in ordered.iterrows():
@@ -103,11 +102,10 @@ def to_markdown_round_report(report_frame: pd.DataFrame, gm_ts: str) -> str:
             f"play {pd.to_datetime(row['played_at']).strftime('%m-%d %H:%M')} "
             f"{row['sport']} {row['league']} "
             f"{row['home_team']} vs {row['away_team']} | "
-            f"odds {row['odds_home_probability']:.2%} | "
-            f"form {row['form_home_probability']:.2%} | "
-            f"hybrid {row['hybrid_home_probability']:.2%} | "
-            f"pick odds={row.get('odds_pick', '')} form={row.get('form_pick', '')} hybrid={row.get('hybrid_pick', '')} | "
-            f"ev form={_format_optional_percent(row.get('expected_value_form'))} hybrid={_format_optional_percent(row.get('expected_value_hybrid'))} | "
+            f"market H={row['odds_home_probability']:.2%} A={_format_optional_percent(row.get('odds_away_probability'))} | "
+            f"form H={row['form_home_probability']:.2%} A={_format_optional_percent(row.get('form_away_probability'))} | "
+            f"hybrid H={row['hybrid_home_probability']:.2%} A={_format_optional_percent(row.get('hybrid_away_probability'))} | "
+            f"best {row.get('recommended_side', '')} via {row.get('recommended_model', '')} ev={_format_optional_percent(row.get('recommended_expected_value'))} | "
             f"grade {row.get('bet_grade', '')} rank={_format_rank(row.get('top_pick_rank'))} trust={row.get('league_trust_level', '')}"
         )
     return "\n".join(lines)

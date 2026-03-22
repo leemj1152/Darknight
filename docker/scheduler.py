@@ -127,6 +127,20 @@ def build_sync_command() -> list[str]:
     return command
 
 
+def build_settle_command() -> list[str]:
+    return [
+        "python",
+        "main.py",
+        "settle-reports",
+        "--input",
+        os.getenv("INPUT_CSV", "data/results.csv"),
+        "--reports-dir",
+        os.getenv("OUTPUT_DIR", "reports"),
+        "--output-dir",
+        os.getenv("ANALYSIS_DIR", "analysis"),
+    ]
+
+
 def next_run_time(now: datetime, hour: int, minute: int) -> datetime:
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
@@ -143,6 +157,11 @@ def run_prediction() -> None:
     print(f"[scheduler] syncing: {' '.join(sync_command)}", flush=True)
     sync_completed = subprocess.run(sync_command, check=False)
     print(f"[scheduler] sync exit code: {sync_completed.returncode}", flush=True)
+
+    settle_command = build_settle_command()
+    print(f"[scheduler] settling: {' '.join(settle_command)}", flush=True)
+    settle_completed = subprocess.run(settle_command, check=False)
+    print(f"[scheduler] settle exit code: {settle_completed.returncode}", flush=True)
 
     backtest_command = build_backtest_command()
     print(f"[scheduler] backtesting: {' '.join(backtest_command)}", flush=True)

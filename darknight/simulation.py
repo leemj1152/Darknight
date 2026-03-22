@@ -76,8 +76,20 @@ def add_strategy_columns(
             "hybrid_pick",
             "form_edge",
             "hybrid_edge",
+            "form_away_probability",
+            "hybrid_away_probability",
+            "expected_value_form_home",
+            "expected_value_form_away",
+            "expected_value_hybrid_home",
+            "expected_value_hybrid_away",
             "expected_value_form",
             "expected_value_hybrid",
+            "recommended_side",
+            "recommended_model",
+            "recommended_probability",
+            "recommended_market_probability",
+            "recommended_expected_value",
+            "value_score",
             "bet_grade",
             "league_hybrid_advantage",
             "league_trust_level",
@@ -93,8 +105,20 @@ def add_strategy_columns(
     hybrid_picks: list[str] = []
     form_edges: list[float | None] = []
     hybrid_edges: list[float | None] = []
+    form_away_probabilities: list[float] = []
+    hybrid_away_probabilities: list[float] = []
+    form_home_evs: list[float | None] = []
+    form_away_evs: list[float | None] = []
+    hybrid_home_evs: list[float | None] = []
+    hybrid_away_evs: list[float | None] = []
     form_expected_values: list[float | None] = []
     hybrid_expected_values: list[float | None] = []
+    recommended_sides: list[str] = []
+    recommended_models: list[str] = []
+    recommended_probabilities: list[float | None] = []
+    recommended_market_probabilities: list[float | None] = []
+    recommended_expected_values: list[float | None] = []
+    value_scores: list[float] = []
     bet_grades: list[str] = []
     league_advantages: list[float] = []
     league_levels: list[str] = []
@@ -103,29 +127,61 @@ def add_strategy_columns(
     for _, row in enriched.iterrows():
         league_name = str(row.get("league", "")) if pd.notna(row.get("league")) else ""
         league_adjustment = league_adjustments.get(league_name, {"advantage": 0.0, "level": "neutral", "boost": 0})
+        form_home_probability = float(row["form_home_probability"])
+        hybrid_home_probability = float(row["hybrid_home_probability"])
+        form_away_probability = away_probability_from_home(form_home_probability, row)
+        hybrid_away_probability = away_probability_from_home(hybrid_home_probability, row)
         odds_decision = choose_market_side(row)
         form_decision = choose_value_side(
             "form",
-            float(row["form_home_probability"]),
+            form_home_probability,
             row,
             edge_threshold=edge_threshold,
         )
         hybrid_decision = choose_value_side(
             "hybrid",
-            float(row["hybrid_home_probability"]),
+            hybrid_home_probability,
             row,
             edge_threshold=edge_threshold,
         )
+        form_home_decision = StrategyDecision("form", "home", form_home_probability, float(row["odds_home_probability"]), form_home_probability - float(row["odds_home_probability"]))
+        form_away_decision = StrategyDecision("form", "away", form_away_probability, _row_away_probability(row), form_away_probability - _row_away_probability(row))
+        hybrid_home_decision = StrategyDecision("hybrid", "home", hybrid_home_probability, float(row["odds_home_probability"]), hybrid_home_probability - float(row["odds_home_probability"]))
+        hybrid_away_decision = StrategyDecision("hybrid", "away", hybrid_away_probability, _row_away_probability(row), hybrid_away_probability - _row_away_probability(row))
 
         odds_picks.append(SIDE_LABELS[odds_decision.side])
         form_picks.append(SIDE_LABELS[form_decision.side])
         hybrid_picks.append(SIDE_LABELS[hybrid_decision.side])
         form_edges.append(None if form_decision.edge is None else round(form_decision.edge, 4))
         hybrid_edges.append(None if hybrid_decision.edge is None else round(hybrid_decision.edge, 4))
+        form_away_probabilities.append(round(form_away_probability, 4))
+        hybrid_away_probabilities.append(round(hybrid_away_probability, 4))
+        form_home_ev = selection_expected_value(row, form_home_decision)
+        form_away_ev = selection_expected_value(row, form_away_decision)
+        hybrid_home_ev = selection_expected_value(row, hybrid_home_decision)
+        hybrid_away_ev = selection_expected_value(row, hybrid_away_decision)
+        form_home_evs.append(None if form_home_ev is None else round(form_home_ev, 4))
+        form_away_evs.append(None if form_away_ev is None else round(form_away_ev, 4))
+        hybrid_home_evs.append(None if hybrid_home_ev is None else round(hybrid_home_ev, 4))
+        hybrid_away_evs.append(None if hybrid_away_ev is None else round(hybrid_away_ev, 4))
         form_ev = selection_expected_value(row, form_decision)
         hybrid_ev = selection_expected_value(row, hybrid_decision)
         form_expected_values.append(None if form_ev is None else round(form_ev, 4))
         hybrid_expected_values.append(None if hybrid_ev is None else round(hybrid_ev, 4))
+        recommendation = choose_recommended_value(
+            row=row,
+            form_home_probability=form_home_probability,
+            form_away_probability=form_away_probability,
+            hybrid_home_probability=hybrid_home_probability,
+            hybrid_away_probability=hybrid_away_probability,
+            league_boost=int(league_adjustment["boost"]),
+        )
+        recommended_sides.append(recommendation["side"])
+        recommended_models.append(recommendation["model"])
+        recommended_probabilities.append(recommendation["probability"])
+        recommended_market_probabilities.append(recommendation["market_probability"])
+        recommended_expected_values.append(recommendation["expected_value"])
+        value_scores.append(round(float(recommendation["score"]), 4))
         bet_grades.append(
             classify_bet_grade(
                 form_decision,
@@ -133,19 +189,32 @@ def add_strategy_columns(
                 form_ev,
                 hybrid_ev,
                 league_boost=int(league_adjustment["boost"]),
+                recommendation_score=float(recommendation["score"]),
             )
         )
         league_advantages.append(round(float(league_adjustment["advantage"]), 4))
         league_levels.append(str(league_adjustment["level"]))
-        rank_scores.append(score_pick_candidate(form_decision, hybrid_decision, form_ev, hybrid_ev, int(league_adjustment["boost"])))
+        rank_scores.append(float(recommendation["score"]))
 
     enriched["odds_pick"] = odds_picks
     enriched["form_pick"] = form_picks
     enriched["hybrid_pick"] = hybrid_picks
     enriched["form_edge"] = form_edges
     enriched["hybrid_edge"] = hybrid_edges
+    enriched["form_away_probability"] = form_away_probabilities
+    enriched["hybrid_away_probability"] = hybrid_away_probabilities
+    enriched["expected_value_form_home"] = form_home_evs
+    enriched["expected_value_form_away"] = form_away_evs
+    enriched["expected_value_hybrid_home"] = hybrid_home_evs
+    enriched["expected_value_hybrid_away"] = hybrid_away_evs
     enriched["expected_value_form"] = form_expected_values
     enriched["expected_value_hybrid"] = hybrid_expected_values
+    enriched["recommended_side"] = recommended_sides
+    enriched["recommended_model"] = recommended_models
+    enriched["recommended_probability"] = recommended_probabilities
+    enriched["recommended_market_probability"] = recommended_market_probabilities
+    enriched["recommended_expected_value"] = recommended_expected_values
+    enriched["value_score"] = value_scores
     enriched["bet_grade"] = bet_grades
     enriched["league_hybrid_advantage"] = league_advantages
     enriched["league_trust_level"] = league_levels
@@ -378,8 +447,9 @@ def classify_bet_grade(
     form_ev: float | None,
     hybrid_ev: float | None,
     league_boost: int = 0,
+    recommendation_score: float | None = None,
 ) -> str:
-    score = score_pick_candidate(form_decision, hybrid_decision, form_ev, hybrid_ev, league_boost)
+    score = recommendation_score if recommendation_score is not None else score_pick_candidate(form_decision, hybrid_decision, form_ev, hybrid_ev, league_boost)
     if score >= 4:
         return "A"
     if score >= 2.5:
@@ -471,3 +541,66 @@ def assign_top_pick_ranks(report_frame: pd.DataFrame, scores: list[float], top_p
     ).head(top_pick_count)
     rank_map = {int(row["_row_id"]): rank for rank, (_, row) in enumerate(ranking_frame.iterrows(), start=1)}
     return [rank_map.get(index) for index in range(len(report_frame))]
+
+
+def away_probability_from_home(home_probability: float, row: pd.Series) -> float:
+    draw_probability = float(row.get("odds_draw_probability")) if pd.notna(row.get("odds_draw_probability")) else 0.0
+    return max(0.0, 1.0 - home_probability - draw_probability)
+
+
+def choose_recommended_value(
+    *,
+    row: pd.Series,
+    form_home_probability: float,
+    form_away_probability: float,
+    hybrid_home_probability: float,
+    hybrid_away_probability: float,
+    league_boost: int,
+) -> dict[str, object]:
+    candidates = [
+        build_value_candidate("form", "home", form_home_probability, float(row["odds_home_probability"]), float(row["home_odds"])),
+        build_value_candidate("form", "away", form_away_probability, _row_away_probability(row), float(row["away_odds"])),
+        build_value_candidate("hybrid", "home", hybrid_home_probability, float(row["odds_home_probability"]), float(row["home_odds"])),
+        build_value_candidate("hybrid", "away", hybrid_away_probability, _row_away_probability(row), float(row["away_odds"])),
+    ]
+    scored = []
+    for candidate in candidates:
+        score = candidate["edge"] * 100 + candidate["expected_value"] * 10 + league_boost
+        if candidate["model"] == "hybrid":
+            score += 0.5
+        if candidate["odds"] <= 1.55:
+            score -= 1.0
+        elif candidate["odds"] >= 3.0:
+            score -= 0.3
+        candidate["score"] = round(score, 4)
+        scored.append(candidate)
+    best = max(scored, key=lambda item: item["score"])
+    if best["expected_value"] < 0.02 or best["edge"] < 0.02:
+        return {
+            "side": "SKIP",
+            "model": "none",
+            "probability": None,
+            "market_probability": None,
+            "expected_value": None,
+            "score": 0.0,
+        }
+    return {
+        "side": SIDE_LABELS[str(best["side"])],
+        "model": str(best["model"]).upper(),
+        "probability": round(float(best["probability"]), 4),
+        "market_probability": round(float(best["market_probability"]), 4),
+        "expected_value": round(float(best["expected_value"]), 4),
+        "score": float(best["score"]),
+    }
+
+
+def build_value_candidate(model: str, side: str, probability: float, market_probability: float, odds: float) -> dict[str, float | str]:
+    return {
+        "model": model,
+        "side": side,
+        "probability": probability,
+        "market_probability": market_probability,
+        "edge": probability - market_probability,
+        "expected_value": odds * probability - 1.0,
+        "odds": odds,
+    }

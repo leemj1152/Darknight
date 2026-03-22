@@ -22,6 +22,7 @@ from .scraper import (
     parse_gmts,
 )
 from .stats import team_summary
+from .tracking import settle_prediction_reports
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,6 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--stake", default=1.0, type=float, help="Flat stake per simulated bet.")
     simulate.add_argument("--cache-dir", default=".cache", help="Directory for trained model caches.")
     simulate.add_argument("--output-dir", default="analysis", help="Directory for saved simulation outputs.")
+
+    settle_reports = subparsers.add_parser(
+        "settle-reports",
+        help="Match saved prediction reports against finished results and track hit rate / ROI.",
+    )
+    settle_reports.add_argument("--input", default="data/results.csv", help="Historical results CSV path.")
+    settle_reports.add_argument("--reports-dir", default="reports", help="Directory containing prediction report CSV files.")
+    settle_reports.add_argument("--output-dir", default="analysis", help="Directory for settled outputs.")
 
     sync_results = subparsers.add_parser(
         "sync-results",
@@ -323,6 +332,21 @@ def main() -> int:
         print(f"Saved simulation summary: {summary_path}")
         print(f"Saved simulation bets: {bets_path}")
         print(f"Saved simulation daily: {daily_path}")
+        return 0
+
+    if args.command == "settle-reports":
+        print("[settle] loading results")
+        frame = load_results_csv(args.input)
+        outputs = settle_prediction_reports(
+            results_frame=frame,
+            reports_dir=args.reports_dir,
+            output_dir=args.output_dir,
+        )
+        print(f"Settled predictions: {outputs.settled_path}")
+        print(f"Settled summary: {outputs.summary_path}")
+        summary = pd.read_csv(outputs.summary_path)
+        if not summary.empty:
+            print(summary.to_string(index=False))
         return 0
 
     if args.command == "predict-form":
@@ -673,6 +697,12 @@ def build_daily_prediction_report(
         if pd.isna(match.get("home_odds")) or pd.isna(match.get("away_odds")):
             continue
 
+        implied = calculate_implied_probabilities(
+            home_odds=float(match["home_odds"]),
+            draw_odds=float(match["draw_odds"]) if pd.notna(match.get("draw_odds")) else None,
+            away_odds=float(match["away_odds"]),
+        )
+
         prediction = predictor.predict(
             historical,
             str(match["home_team"]),
@@ -695,7 +725,9 @@ def build_daily_prediction_report(
                 "home_odds": match.get("home_odds"),
                 "draw_odds": match.get("draw_odds"),
                 "away_odds": match.get("away_odds"),
-                "odds_home_probability": prediction.odds_home_probability,
+                "odds_home_probability": implied.home_probability,
+                "odds_draw_probability": implied.draw_probability,
+                "odds_away_probability": implied.away_probability,
                 "form_home_probability": prediction.form_home_probability,
                 "hybrid_home_probability": prediction.hybrid_home_probability,
                 "bookmaker_margin": prediction.bookmaker_margin,
@@ -719,6 +751,8 @@ def build_daily_prediction_report(
                 "draw_odds",
                 "away_odds",
                 "odds_home_probability",
+                "odds_draw_probability",
+                "odds_away_probability",
                 "form_home_probability",
                 "hybrid_home_probability",
                 "bookmaker_margin",

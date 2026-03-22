@@ -132,6 +132,29 @@ This writes:
 - `analysis/simulation_bets.csv`
 - `analysis/simulation_daily.csv`
 
+## Settle Reports
+
+You can continuously score saved prediction reports against finished results.
+
+```bash
+python main.py settle-reports --input data/results.csv --reports-dir reports --output-dir analysis
+```
+
+This writes:
+
+- `analysis/settled_predictions.csv`
+- `analysis/settled_summary.csv`
+
+## Streamlit Web
+
+Run the local web UI:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Docker Compose also starts a web service on `http://localhost:8501`.
+
 ## Model cache
 
 `predict-form`, `predict-hybrid`, and `predict-today` can store trained models in `.cache` by default.
@@ -205,6 +228,7 @@ Default container behavior:
 - runs `python docker/scheduler.py`
 - waits until the next scheduled time
 - runs `sync-results` first
+- runs `settle-reports` to score older predictions
 - runs `backtest` and writes analysis files
 - runs `simulate-bets` and writes mock betting ROI files
 - executes `predict-all`
@@ -228,6 +252,17 @@ Useful environment variables:
 - `SIMULATION_STAKE`: flat unit stake per simulated bet, default `1.0`
 - `CACHE_DIR`: cache directory, default `.cache`
 - `RECENT_GAMES`: recent game window, default `5`
+
+## Git Workflow
+
+Recommended loop:
+
+```bash
+git status
+git add .
+git commit -m "Describe the change"
+git push origin main
+```
 - `SEARCH_WINDOW`: how many future `gmTs` values to scan for today's matches
 - `BACKTEST_TEST_RATIO`: test split fraction for the daily backtest job
 - `SYNC_PROBE_COUNT`: how many completed `gmTs` values to probe ahead from the latest stored result round

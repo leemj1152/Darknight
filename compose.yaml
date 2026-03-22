@@ -28,3 +28,16 @@ services:
       - ./.cache:/app/.cache
       - ./analysis:/app/analysis
       - ./reports:/app/reports
+  darknight-web:
+    build: .
+    container_name: darknight-web
+    command: ["streamlit", "run", "streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      TZ: Asia/Seoul
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./.cache:/app/.cache
+      - ./analysis:/app/analysis
+      - ./reports:/app/reports
