@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 from zoneinfo import ZoneInfo
 
 
@@ -137,28 +135,6 @@ def build_settle_command() -> list[str]:
     ]
 
 
-def build_probe_command() -> list[str]:
-    command = [
-        "python",
-        "main.py",
-        "probe-round",
-        "--input",
-        os.getenv("INPUT_CSV", "data/results.csv"),
-        "--url",
-        os.getenv("UPCOMING_URL", "https://www.betman.co.kr/main/mainPage/gamebuy/gameSlip.do?frameType=typeA&gmId=G101"),
-        "--search-window",
-        os.getenv("SEARCH_WINDOW", "12"),
-    ]
-    gmts = os.getenv("UPCOMING_GMTS")
-    if gmts:
-        command.extend(["--gmts", gmts])
-    if env_flag("USE_BROWSER", True):
-        command.append("--browser")
-    if env_flag("HEADED", False):
-        command.append("--headed")
-    return command
-
-
 def run_pipeline(reason: str) -> None:
     Path(os.getenv("OUTPUT_DIR", "reports")).mkdir(parents=True, exist_ok=True)
     Path(os.getenv("CACHE_DIR", ".cache")).mkdir(parents=True, exist_ok=True)
@@ -192,106 +168,95 @@ def run_pipeline(reason: str) -> None:
     print(f"[scheduler] predict exit code: {prediction_completed.returncode}", flush=True)
 
 
-def probe_round_snapshot() -> dict[str, str] | None:
-    command = build_probe_command()
-    print(f"[scheduler] probing round: {' '.join(command)}", flush=True)
-    completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    if completed.returncode != 0:
-        print(f"[scheduler] probe failed rc={completed.returncode}", flush=True)
-        if completed.stdout:
-            print(completed.stdout, flush=True)
-        if completed.stderr:
-            print(completed.stderr, flush=True)
-        return None
-
-    snapshot: dict[str, str] = {}
-    for raw_line in completed.stdout.splitlines():
-        line = raw_line.strip()
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        snapshot[key.strip()] = value.strip()
-    if snapshot:
-        print(
-            f"[scheduler] probe gmTs={snapshot.get('gmTs', '')} close_at_max={snapshot.get('close_at_max', '')}",
-            flush=True,
-        )
-    return snapshot or None
-
-
-def next_daily_run(now: datetime, hour: int, minute: int) -> datetime:
+def next_run_time(now: datetime, hour: int, minute: int) -> datetime:
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
     return target
 
 
-def load_state(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+def is_round_refresh_day(now: datetime, round_days: set[int]) -> bool:
+    return now.weekday() in round_days
 
 
-def save_state(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+def parse_weekdays(raw: str) -> set[int]:
+    mapping = {
+        "mon": 0,
+        "monday": 0,
+        "tue": 1,
+        "tuesday": 1,
+        "wed": 2,
+        "wednesday": 2,
+        "thu": 3,
+        "thursday": 3,
+        "fri": 4,
+        "friday": 4,
+        "sat": 5,
+        "saturday": 5,
+        "sun": 6,
+        "sunday": 6,
+    }
+    weekdays: set[int] = set()
+    for part in raw.split(","):
+        normalized = part.strip().lower()
+        if normalized in mapping:
+            weekdays.add(mapping[normalized])
+    return weekdays or {0, 2, 4}
 
 
 def main() -> int:
     timezone = ZoneInfo(os.getenv("TZ", "Asia/Seoul"))
-    hour = int(os.getenv("REPORT_HOUR", "8"))
-    minute = int(os.getenv("REPORT_MINUTE", "0"))
-    poll_minutes = int(os.getenv("POLL_MINUTES", "15"))
+    daily_hour = int(os.getenv("REPORT_HOUR", "8"))
+    daily_minute = int(os.getenv("REPORT_MINUTE", "0"))
+    round_hour = int(os.getenv("ROUND_REPORT_HOUR", "14"))
+    round_minute = int(os.getenv("ROUND_REPORT_MINUTE", "0"))
+    round_days = parse_weekdays(os.getenv("ROUND_REPORT_WEEKDAYS", "mon,wed,fri"))
+    poll_minutes = int(os.getenv("POLL_MINUTES", "10"))
     run_on_start = env_flag("RUN_ON_START", False)
-    state_path = Path(os.getenv("SCHEDULER_STATE_PATH", "analysis/scheduler_state.json"))
+    state_path = Path(os.getenv("SCHEDULER_STATE_PATH", "analysis/scheduler_state.txt"))
 
     print(
-        f"[scheduler] timezone={timezone.key} report_time={hour:02d}:{minute:02d} "
+        f"[scheduler] timezone={timezone.key} daily_time={daily_hour:02d}:{daily_minute:02d} "
+        f"round_time={round_hour:02d}:{round_minute:02d} round_days={sorted(round_days)} "
         f"poll_minutes={poll_minutes} run_on_start={run_on_start}",
         flush=True,
     )
 
-    state = load_state(state_path)
+    last_mark = state_path.read_text(encoding="utf-8").strip() if state_path.exists() else ""
     if run_on_start:
         run_pipeline("startup")
-        state["last_daily_run_date"] = datetime.now(timezone).date().isoformat()
-        save_state(state_path, state)
+        last_mark = f"startup:{datetime.now(timezone).isoformat()}"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(last_mark, encoding="utf-8")
 
     while True:
         now = datetime.now(timezone)
-        target = next_daily_run(now, hour, minute)
-        snapshot = probe_round_snapshot()
-        daily_due = state.get("last_daily_run_date") != now.date().isoformat() and now >= now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-        round_changed = False
-        if snapshot and snapshot.get("gmTs"):
-            last_gmts = state.get("last_round_gmts")
-            current_gmts = snapshot.get("gmTs")
-            round_changed = current_gmts != last_gmts and last_gmts is not None
-            state["last_seen_round_gmts"] = current_gmts
-            state["last_seen_round_close_at"] = snapshot.get("close_at_max", "")
+        daily_key = f"daily:{now.date().isoformat()}"
+        round_key = f"round:{now.date().isoformat()}"
+        daily_due = (
+            last_mark != daily_key
+            and now >= now.replace(hour=daily_hour, minute=daily_minute, second=0, microsecond=0)
+        )
+        round_due = (
+            last_mark != round_key
+            and is_round_refresh_day(now, round_days)
+            and now >= now.replace(hour=round_hour, minute=round_minute, second=0, microsecond=0)
+        )
 
         if daily_due:
             run_pipeline("daily")
-            state["last_daily_run_date"] = now.date().isoformat()
-            if snapshot and snapshot.get("gmTs"):
-                state["last_round_gmts"] = snapshot["gmTs"]
-            save_state(state_path, state)
-        elif round_changed:
-            run_pipeline("round_change")
-            state["last_round_gmts"] = snapshot["gmTs"]
-            state["last_round_change_run_at"] = now.isoformat()
-            save_state(state_path, state)
-        elif snapshot and state.get("last_round_gmts") is None:
-            state["last_round_gmts"] = snapshot["gmTs"]
-            save_state(state_path, state)
+            last_mark = daily_key
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            state_path.write_text(last_mark, encoding="utf-8")
+        elif round_due:
+            run_pipeline("round_refresh")
+            last_mark = round_key
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            state_path.write_text(last_mark, encoding="utf-8")
 
         sleep_seconds = max(60, poll_minutes * 60)
         print(
-            f"[scheduler] now={now.isoformat()} next_daily={target.isoformat()} "
+            f"[scheduler] now={now.isoformat()} next_daily={next_run_time(now, daily_hour, daily_minute).isoformat()} "
             f"sleep={sleep_seconds}s",
             flush=True,
         )

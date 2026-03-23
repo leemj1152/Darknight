@@ -6,6 +6,9 @@ services:
       TZ: Asia/Seoul
       REPORT_HOUR: "8"
       REPORT_MINUTE: "0"
+      ROUND_REPORT_HOUR: "14"
+      ROUND_REPORT_MINUTE: "0"
+      ROUND_REPORT_WEEKDAYS: "mon,wed,fri"
       RUN_ON_START: "false"
       INPUT_CSV: data/results.csv
       GM_ID: G101
@@ -21,6 +24,7 @@ services:
       SIMULATION_STAKE: "1.0"
       SYNC_PROBE_COUNT: "6"
       SYNC_STOP_AFTER_MISS: "2"
+      POLL_MINUTES: "10"
       USE_BROWSER: "true"
       HEADED: "false"
     volumes:
