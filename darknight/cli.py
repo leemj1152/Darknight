@@ -105,6 +105,17 @@ def build_parser() -> argparse.ArgumentParser:
     sync_results.add_argument("--probe-count", default=6, type=int, help="How many gmTs values to probe ahead from the latest known round.")
     sync_results.add_argument("--stop-after-miss", default=2, type=int, help="Stop after this many consecutive misses while probing.")
 
+    probe_round = subparsers.add_parser(
+        "probe-round",
+        help="Resolve the currently active round and print its close window.",
+    )
+    probe_round.add_argument("--input", default="data/results.csv", help="Historical results CSV path.")
+    probe_round.add_argument("--url", required=True, help="Upcoming matches page base URL.")
+    probe_round.add_argument("--gmts", type=int, help="Optional fixed gmTs.")
+    probe_round.add_argument("--browser", action="store_true", help="Render the page with Chromium.")
+    probe_round.add_argument("--headed", action="store_true", help="Open the browser window for debugging.")
+    probe_round.add_argument("--search-window", default=6, type=int, help="How many gmTs values to probe ahead.")
+
     predict_form = subparsers.add_parser("predict-form", help="Form-based home win probability.")
     add_predict_common_args(predict_form)
 
@@ -247,6 +258,26 @@ def main() -> int:
             stop_after_miss=args.stop_after_miss,
         )
         print(f"Synced rows: {len(frame)}")
+        return 0
+
+    if args.command == "probe-round":
+        historical = load_results_csv(args.input)
+        round_matches, round_gmts = resolve_round_matches(
+            scraper=scraper,
+            historical=historical,
+            url=args.url,
+            gm_ts=args.gmts,
+            use_browser=args.browser,
+            headed=args.headed,
+            search_window=args.search_window,
+        )
+        close_times = pd.to_datetime(round_matches["close_at"], errors="coerce")
+        played_times = pd.to_datetime(round_matches["played_at"], errors="coerce")
+        print(f"gmTs: {round_gmts}")
+        print(f"rows: {len(round_matches)}")
+        print(f"close_at_max: {close_times.max().isoformat() if close_times.notna().any() else ''}")
+        print(f"played_at_min: {played_times.min().isoformat() if played_times.notna().any() else ''}")
+        print(f"played_at_max: {played_times.max().isoformat() if played_times.notna().any() else ''}")
         return 0
 
     if args.command == "predict-odds":
