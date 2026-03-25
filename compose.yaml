@@ -25,6 +25,8 @@ services:
       SYNC_PROBE_COUNT: "6"
       SYNC_STOP_AFTER_MISS: "2"
       POLL_MINUTES: "10"
+      SCHEDULER_LOCK_MAX_AGE_MINUTES: "180"
+      SCHEDULER_STAGE_TIMEOUT_SECONDS: "3600"
       USE_BROWSER: "true"
       HEADED: "false"
     volumes:
