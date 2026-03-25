@@ -215,6 +215,30 @@ def parse_weekdays(raw: str) -> set[int]:
     return weekdays or {0, 2, 4}
 
 
+def load_state(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    raw_text = path.read_text(encoding="utf-8").strip()
+    if raw_text.startswith("daily:"):
+        return {"last_daily_mark": raw_text}
+    if raw_text.startswith("round:"):
+        return {"last_round_mark": raw_text}
+    state: dict[str, str] = {}
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        state[key.strip()] = value.strip()
+    return state
+
+
+def save_state(path: Path, state: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"{key}={value}" for key, value in sorted(state.items())]
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def main() -> int:
     timezone = ZoneInfo(os.getenv("TZ", "Asia/Seoul"))
     daily_hour = int(os.getenv("REPORT_HOUR", "8"))
@@ -233,37 +257,34 @@ def main() -> int:
         flush=True,
     )
 
-    last_mark = state_path.read_text(encoding="utf-8").strip() if state_path.exists() else ""
+    state = load_state(state_path)
     if run_on_start:
         run_pipeline("startup")
-        last_mark = f"startup:{datetime.now(timezone).isoformat()}"
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(last_mark, encoding="utf-8")
+        state["last_startup_run_at"] = datetime.now(timezone).isoformat()
+        save_state(state_path, state)
 
     while True:
         now = datetime.now(timezone)
         daily_key = f"daily:{now.date().isoformat()}"
         round_key = f"round:{now.date().isoformat()}"
         daily_due = (
-            last_mark != daily_key
+            state.get("last_daily_mark") != daily_key
             and now >= now.replace(hour=daily_hour, minute=daily_minute, second=0, microsecond=0)
         )
         round_due = (
-            last_mark != round_key
+            state.get("last_round_mark") != round_key
             and is_round_refresh_day(now, round_days)
             and now >= now.replace(hour=round_hour, minute=round_minute, second=0, microsecond=0)
         )
 
         if daily_due:
             run_pipeline("daily")
-            last_mark = daily_key
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            state_path.write_text(last_mark, encoding="utf-8")
+            state["last_daily_mark"] = daily_key
+            save_state(state_path, state)
         elif round_due:
             run_pipeline("round_refresh")
-            last_mark = round_key
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            state_path.write_text(last_mark, encoding="utf-8")
+            state["last_round_mark"] = round_key
+            save_state(state_path, state)
 
         sleep_seconds = max(60, poll_minutes * 60)
         print(
