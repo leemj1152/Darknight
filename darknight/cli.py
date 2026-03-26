@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score, brier_score_loss, log_loss
 
 from .cache import build_cache_key, csv_signature, ensure_cache_dir, load_joblib, save_joblib
 from .odds import calculate_implied_probabilities, calculate_implied_probabilities_from_row
-from .predictor import FormPredictor, HybridPredictor
+from .predictor import FORM_FEATURE_COLUMNS, HYBRID_FEATURE_COLUMNS, FormPredictor, HybridPredictor
 from .reporting import filter_matches_for_date, save_daily_report, save_round_report
 from .simulation import add_strategy_columns, simulate_betting_agents
 from .scraper import (
@@ -630,6 +630,7 @@ def predictor_cache_path(
     ensure_cache_dir(cache_dir)
     key = build_cache_key(
         {
+            "schema_version": 2,
             "predictor": predictor_name,
             "recent_games": recent_games,
             "csv": csv_signature(csv_path),
@@ -652,13 +653,8 @@ def load_or_fit_form_predictor(
         predictor_name="form",
     )
     cached = load_joblib(cache_path)
-    if cached is not None:
+    if cached is not None and predictor_cache_is_compatible(cached, "form"):
         return cached
-
-    fallback = load_latest_predictor_cache(cache_dir=cache_dir, predictor_name="form")
-    if fallback is not None:
-        save_joblib(cache_path, fallback)
-        return fallback
 
     predictor = FormPredictor(recent_games=recent_games)
     predictor.fit(frame)
@@ -680,13 +676,8 @@ def load_or_fit_hybrid_predictor(
         predictor_name="hybrid",
     )
     cached = load_joblib(cache_path)
-    if cached is not None:
+    if cached is not None and predictor_cache_is_compatible(cached, "hybrid"):
         return cached
-
-    fallback = load_latest_predictor_cache(cache_dir=cache_dir, predictor_name="hybrid")
-    if fallback is not None:
-        save_joblib(cache_path, fallback)
-        return fallback
 
     predictor = HybridPredictor(recent_games=recent_games)
     predictor.fit(frame)
@@ -694,23 +685,15 @@ def load_or_fit_hybrid_predictor(
     return predictor
 
 
-def load_latest_predictor_cache(
-    *,
-    cache_dir: str,
-    predictor_name: str,
-):
-    cache_path = Path(cache_dir)
-    candidates = sorted(
-        cache_path.glob(f"{predictor_name}_*.joblib"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    for candidate in candidates:
-        cached = load_joblib(candidate)
-        if cached is not None:
-            print(f"[cache] using fallback {candidate.name}")
-            return cached
-    return None
+def predictor_cache_is_compatible(cached, predictor_name: str) -> bool:
+    expected = FORM_FEATURE_COLUMNS if predictor_name == "form" else HYBRID_FEATURE_COLUMNS
+    try:
+        model = cached.model
+        scaler = model.named_steps["scaler"]
+        feature_names = list(getattr(scaler, "feature_names_in_", []))
+    except Exception:
+        return False
+    return feature_names == expected
 
 
 def build_daily_prediction_report(

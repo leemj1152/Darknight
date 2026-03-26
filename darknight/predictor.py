@@ -362,7 +362,6 @@ class HybridPredictor:
                     if not pd.isna(current_game.get("draw_odds"))
                     else None
                 ),
-                handicap_line=float(current_game.get("handicap_line", 0.0) or 0.0),
             )
             rows.append(
                 {
