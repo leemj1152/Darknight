@@ -31,6 +31,22 @@ HYBRID_FEATURE_COLUMNS = FORM_FEATURE_COLUMNS + [
 ]
 
 
+def _safe_float(value: object, default: float = 0.0) -> float:
+    numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(numeric):
+        return default
+    return float(numeric)
+
+
+def _sanitize_feature_frame(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    sanitized = frame.copy()
+    for column in columns:
+        if column not in sanitized.columns:
+            sanitized[column] = 0.0
+        sanitized[column] = pd.to_numeric(sanitized[column], errors="coerce").fillna(0.0)
+    return sanitized[columns]
+
+
 @dataclass(slots=True)
 class FormPrediction:
     home_team: str
@@ -63,7 +79,7 @@ def _normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def adjusted_scores(game: pd.Series) -> tuple[float, float]:
-    handicap_line = float(game.get("handicap_line", 0.0) or 0.0)
+    handicap_line = _safe_float(game.get("handicap_line", 0.0), 0.0)
     return float(game["home_score"]) + handicap_line, float(game["away_score"])
 
 
@@ -175,7 +191,7 @@ def build_form_features(
     return pd.DataFrame(
         [
             {
-                "handicap_line": float(handicap_line),
+                "handicap_line": _safe_float(handicap_line, 0.0),
                 "home_win_rate_all": home_all["win_rate"],
                 "away_win_rate_all": away_all["win_rate"],
                 "home_recent_win_rate": home_all["recent_win_rate"],
@@ -204,7 +220,7 @@ class FormPredictor:
         dataset = self.get_training_dataset(frame)
         if dataset.empty:
             raise ValueError("Not enough training rows for the form model.")
-        self.model.fit(dataset[FORM_FEATURE_COLUMNS], dataset["home_win"])
+        self.model.fit(_sanitize_feature_frame(dataset, FORM_FEATURE_COLUMNS), dataset["home_win"])
 
     def predict(
         self,
@@ -225,7 +241,7 @@ class FormPredictor:
             league=league,
             recent_games=self.recent_games,
         )
-        probability = float(self.model.predict_proba(features[FORM_FEATURE_COLUMNS])[0][1])
+        probability = float(self.model.predict_proba(_sanitize_feature_frame(features, FORM_FEATURE_COLUMNS))[0][1])
         return FormPrediction(
             home_team=home_team,
             away_team=away_team,
@@ -243,7 +259,7 @@ class FormPredictor:
                 scoped_prior,
                 current_game["home_team"],
                 current_game["away_team"],
-                handicap_line=float(current_game.get("handicap_line", 0.0) or 0.0),
+                handicap_line=_safe_float(current_game.get("handicap_line", 0.0), 0.0),
                 sport=current_game.get("sport"),
                 league=current_game.get("league"),
                 recent_games=self.recent_games,
@@ -289,7 +305,7 @@ class HybridPredictor:
         dataset = self.get_training_dataset(normalized)
         if dataset.empty:
             raise ValueError("Not enough training rows for the hybrid model.")
-        self.model.fit(dataset[HYBRID_FEATURE_COLUMNS], dataset["home_win"])
+        self.model.fit(_sanitize_feature_frame(dataset, HYBRID_FEATURE_COLUMNS), dataset["home_win"])
 
     def predict(
         self,
@@ -329,7 +345,7 @@ class HybridPredictor:
                 }
             ]
         )
-        hybrid_probability = float(self.model.predict_proba(features[HYBRID_FEATURE_COLUMNS])[0][1])
+        hybrid_probability = float(self.model.predict_proba(_sanitize_feature_frame(features, HYBRID_FEATURE_COLUMNS))[0][1])
         return HybridPrediction(
             home_team=home_team,
             away_team=away_team,
