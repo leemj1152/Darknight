@@ -132,6 +132,11 @@ def settle_single_report(report: pd.DataFrame, results: pd.DataFrame, report_nam
         axis=1,
     )
     merged["recommended_profit"] = merged.apply(compute_recommended_profit, axis=1)
+    merged["recommended_full_side"] = merged.apply(resolve_full_recommended_side, axis=1)
+    merged["recommended_full_hit"] = merged.apply(
+        lambda row: evaluate_pick_hit(row.get("recommended_full_side"), row.get("actual_outcome")),
+        axis=1,
+    )
     merged["odds_pick_hit"] = merged.apply(lambda row: evaluate_pick_hit(row.get("odds_pick"), row.get("actual_outcome")), axis=1)
     merged["form_pick_hit"] = merged.apply(lambda row: evaluate_pick_hit(row.get("form_pick"), row.get("actual_outcome")), axis=1)
     merged["hybrid_pick_hit"] = merged.apply(lambda row: evaluate_pick_hit(row.get("hybrid_pick"), row.get("actual_outcome")), axis=1)
@@ -167,6 +172,26 @@ def compute_recommended_profit(row: pd.Series) -> float | None:
     return round(float(odds) - 1.0, 4) if evaluate_pick_hit(side, row.get("actual_outcome")) == 1 else -1.0
 
 
+def resolve_full_recommended_side(row: pd.Series) -> str:
+    side = row.get("recommended_side")
+    if pd.notna(side) and str(side).upper() != "SKIP":
+        return str(side).upper()
+
+    model = str(row.get("recommended_model", "")).upper()
+    if model == "FORM":
+        home_probability = float(row.get("form_home_probability", 0.5))
+        away_probability = float(row.get("form_away_probability", 1.0 - home_probability))
+        return "HOME" if home_probability >= away_probability else "AWAY"
+    if model == "HYBRID":
+        home_probability = float(row.get("hybrid_home_probability", 0.5))
+        away_probability = float(row.get("hybrid_away_probability", 1.0 - home_probability))
+        return "HOME" if home_probability >= away_probability else "AWAY"
+
+    hybrid_home = float(row.get("hybrid_home_probability", 0.5))
+    hybrid_away = float(row.get("hybrid_away_probability", 1.0 - hybrid_home))
+    return "HOME" if hybrid_home >= hybrid_away else "AWAY"
+
+
 def summarize_settled_reports(settled: pd.DataFrame) -> pd.DataFrame:
     if settled.empty:
         return pd.DataFrame(
@@ -174,6 +199,10 @@ def summarize_settled_reports(settled: pd.DataFrame) -> pd.DataFrame:
                 "bucket",
                 "name",
                 "settled_rows",
+                "odds_accuracy",
+                "form_accuracy",
+                "hybrid_accuracy",
+                "recommended_full_accuracy",
                 "recommended_bets",
                 "recommended_hits",
                 "recommended_accuracy",
@@ -196,12 +225,20 @@ def summarize_bucket(frame: pd.DataFrame, bucket: str, name: str) -> list[dict[s
     recommended_bets = int(len(recommended))
     recommended_accuracy = float(recommended_hits.mean()) if not recommended_hits.empty else 0.0
     recommended_roi = float(recommended_profit / recommended_bets) if recommended_bets else 0.0
+    odds_accuracy = summarize_hit_column(frame, "odds_pick_hit")
+    form_accuracy = summarize_hit_column(frame, "form_pick_hit")
+    hybrid_accuracy = summarize_hit_column(frame, "hybrid_pick_hit")
+    recommended_full_accuracy = summarize_hit_column(frame, "recommended_full_hit")
 
     return [
         {
             "bucket": bucket,
             "name": name,
             "settled_rows": int(len(frame)),
+            "odds_accuracy": odds_accuracy,
+            "form_accuracy": form_accuracy,
+            "hybrid_accuracy": hybrid_accuracy,
+            "recommended_full_accuracy": recommended_full_accuracy,
             "recommended_bets": recommended_bets,
             "recommended_hits": int(recommended_hits.sum()) if not recommended_hits.empty else 0,
             "recommended_accuracy": recommended_accuracy,
@@ -209,6 +246,15 @@ def summarize_bucket(frame: pd.DataFrame, bucket: str, name: str) -> list[dict[s
             "recommended_roi": recommended_roi,
         }
     ]
+
+
+def summarize_hit_column(frame: pd.DataFrame, column: str) -> float:
+    if column not in frame.columns:
+        return 0.0
+    series = frame[column].dropna()
+    if series.empty:
+        return 0.0
+    return float(series.astype(int).mean())
 
 
 def settled_columns() -> list[str]:
@@ -224,6 +270,7 @@ def settled_columns() -> list[str]:
         "home_odds",
         "away_odds",
         "recommended_side",
+        "recommended_full_side",
         "recommended_model",
         "recommended_expected_value",
         "bet_grade",
@@ -231,6 +278,7 @@ def settled_columns() -> list[str]:
         "home_score",
         "away_score",
         "recommended_hit",
+        "recommended_full_hit",
         "recommended_profit",
         "odds_pick",
         "odds_pick_hit",

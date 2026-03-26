@@ -199,6 +199,18 @@ with tab_tracking:
     if settled_summary.empty:
         st.info("정산 데이터가 없습니다. `python main.py settle-reports`를 먼저 실행하세요.")
     else:
+        overall = settled_summary[settled_summary["bucket"] == "overall"]
+        if not overall.empty:
+            row = overall.iloc[0]
+            metric_columns = st.columns(4)
+            metric_columns[0].metric("Odds 정확도", f"{float(row['odds_accuracy']):.2%}")
+            metric_columns[1].metric("Form 정확도", f"{float(row['form_accuracy']):.2%}")
+            metric_columns[2].metric("Hybrid 정확도", f"{float(row['hybrid_accuracy']):.2%}")
+            metric_columns[3].metric("Final 정확도", f"{float(row['recommended_full_accuracy']):.2%}")
+            metric_columns = st.columns(3)
+            metric_columns[0].metric("추천 베팅 ROI", f"{float(row['recommended_roi']):.2%}")
+            metric_columns[1].metric("추천 베팅 수", f"{int(row['recommended_bets'])}")
+            metric_columns[2].metric("정산 경기 수", f"{int(row['settled_rows'])}")
         st.dataframe(settled_summary, use_container_width=True, hide_index=True)
         if not settled_predictions.empty:
             st.markdown("### 최근 정산")
