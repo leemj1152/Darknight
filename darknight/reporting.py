@@ -58,19 +58,20 @@ def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:
                 f"- #{int(row['top_pick_rank'])} {row['home_team']} vs {row['away_team']} | "
                 f"pick {row.get('recommended_side', '')} via {row.get('recommended_model', '')} | "
                 f"grade {row.get('bet_grade', '')} | "
-                f"ev={_format_optional_percent(row.get('recommended_expected_value'))}"
+                f"prob={_format_optional_percent(row.get('recommended_probability'))}"
             )
         lines.append("")
     for _, row in ordered.iterrows():
         lines.append(
             f"- close {pd.to_datetime(row['close_at']).strftime('%H:%M') if pd.notna(row.get('close_at')) else '--:--'} "
             f"play {pd.to_datetime(row['played_at']).strftime('%H:%M')} "
-            f"{row['sport']} {row['league']} "
+            f"{row['sport']} {row['league']} {row.get('game_type', '')} "
             f"{row['home_team']} vs {row['away_team']} | "
+            f"handicap={_format_optional_number(row.get('handicap_line'))} | "
             f"market H={row['odds_home_probability']:.2%} A={_format_optional_percent(row.get('odds_away_probability'))} | "
             f"form H={row['form_home_probability']:.2%} A={_format_optional_percent(row.get('form_away_probability'))} | "
             f"hybrid H={row['hybrid_home_probability']:.2%} A={_format_optional_percent(row.get('hybrid_away_probability'))} | "
-            f"best {row.get('recommended_side', '')} via {row.get('recommended_model', '')} ev={_format_optional_percent(row.get('recommended_expected_value'))} | "
+            f"best {row.get('recommended_side', '')} via {row.get('recommended_model', '')} prob={_format_optional_percent(row.get('recommended_probability'))} | "
             f"grade {row.get('bet_grade', '')} rank={_format_rank(row.get('top_pick_rank'))} trust={row.get('league_trust_level', '')} | "
             f"gmTs {row.get('gm_ts', '')}"
         )
@@ -93,19 +94,20 @@ def to_markdown_round_report(report_frame: pd.DataFrame, gm_ts: str) -> str:
                 f"- #{int(row['top_pick_rank'])} {row['home_team']} vs {row['away_team']} | "
                 f"pick {row.get('recommended_side', '')} via {row.get('recommended_model', '')} | "
                 f"grade {row.get('bet_grade', '')} | "
-                f"ev={_format_optional_percent(row.get('recommended_expected_value'))}"
+                f"prob={_format_optional_percent(row.get('recommended_probability'))}"
             )
         lines.append("")
     for _, row in ordered.iterrows():
         lines.append(
             f"- close {pd.to_datetime(row['close_at']).strftime('%H:%M') if pd.notna(row.get('close_at')) else '--:--'} "
             f"play {pd.to_datetime(row['played_at']).strftime('%m-%d %H:%M')} "
-            f"{row['sport']} {row['league']} "
+            f"{row['sport']} {row['league']} {row.get('game_type', '')} "
             f"{row['home_team']} vs {row['away_team']} | "
+            f"handicap={_format_optional_number(row.get('handicap_line'))} | "
             f"market H={row['odds_home_probability']:.2%} A={_format_optional_percent(row.get('odds_away_probability'))} | "
             f"form H={row['form_home_probability']:.2%} A={_format_optional_percent(row.get('form_away_probability'))} | "
             f"hybrid H={row['hybrid_home_probability']:.2%} A={_format_optional_percent(row.get('hybrid_away_probability'))} | "
-            f"best {row.get('recommended_side', '')} via {row.get('recommended_model', '')} ev={_format_optional_percent(row.get('recommended_expected_value'))} | "
+            f"best {row.get('recommended_side', '')} via {row.get('recommended_model', '')} prob={_format_optional_percent(row.get('recommended_probability'))} | "
             f"grade {row.get('bet_grade', '')} rank={_format_rank(row.get('top_pick_rank'))} trust={row.get('league_trust_level', '')}"
         )
     return "\n".join(lines)
@@ -121,3 +123,9 @@ def _format_rank(value: object) -> str:
     if pd.isna(value):
         return "-"
     return str(int(float(value)))
+
+
+def _format_optional_number(value: object) -> str:
+    if pd.isna(value):
+        return "-"
+    return f"{float(value):.1f}"

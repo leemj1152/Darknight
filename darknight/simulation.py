@@ -168,7 +168,7 @@ def add_strategy_columns(
         hybrid_ev = selection_expected_value(row, hybrid_decision)
         form_expected_values.append(None if form_ev is None else round(form_ev, 4))
         hybrid_expected_values.append(None if hybrid_ev is None else round(hybrid_ev, 4))
-        recommendation = choose_recommended_value(
+        recommendation = choose_recommended_pick(
             row=row,
             form_home_probability=form_home_probability,
             form_away_probability=form_away_probability,
@@ -186,8 +186,8 @@ def add_strategy_columns(
             classify_bet_grade(
                 form_decision,
                 hybrid_decision,
-                form_ev,
-                hybrid_ev,
+                form_confidence=abs(form_home_probability - 0.5) * 2,
+                hybrid_confidence=abs(hybrid_home_probability - 0.5) * 2,
                 league_boost=int(league_adjustment["boost"]),
                 recommendation_score=float(recommendation["score"]),
             )
@@ -444,12 +444,12 @@ def selection_expected_value(row: pd.Series, decision: StrategyDecision) -> floa
 def classify_bet_grade(
     form_decision: StrategyDecision,
     hybrid_decision: StrategyDecision,
-    form_ev: float | None,
-    hybrid_ev: float | None,
+    form_confidence: float,
+    hybrid_confidence: float,
     league_boost: int = 0,
     recommendation_score: float | None = None,
 ) -> str:
-    score = recommendation_score if recommendation_score is not None else score_pick_candidate(form_decision, hybrid_decision, form_ev, hybrid_ev, league_boost)
+    score = recommendation_score if recommendation_score is not None else score_pick_candidate(form_decision, hybrid_decision, form_confidence, hybrid_confidence, league_boost)
     if score >= 4:
         return "A"
     if score >= 2.5:
@@ -462,27 +462,17 @@ def classify_bet_grade(
 def score_pick_candidate(
     form_decision: StrategyDecision,
     hybrid_decision: StrategyDecision,
-    form_ev: float | None,
-    hybrid_ev: float | None,
+    form_confidence: float,
+    hybrid_confidence: float,
     league_boost: int,
 ) -> float:
     score = float(league_boost)
     if hybrid_decision.side != "skip":
-        score += 1.5
+        score += 1.5 + hybrid_confidence * 3
     if form_decision.side != "skip":
-        score += 1.0
+        score += 1.0 + form_confidence * 2
     if hybrid_decision.side != "skip" and form_decision.side == hybrid_decision.side:
         score += 1.0
-    if hybrid_ev is not None:
-        if hybrid_ev >= 0.08:
-            score += 1.5
-        elif hybrid_ev >= 0.03:
-            score += 1.0
-    if form_ev is not None:
-        if form_ev >= 0.12:
-            score += 1.0
-        elif form_ev >= 0.05:
-            score += 0.5
     return score
 
 
@@ -548,7 +538,7 @@ def away_probability_from_home(home_probability: float, row: pd.Series) -> float
     return max(0.0, 1.0 - home_probability - draw_probability)
 
 
-def choose_recommended_value(
+def choose_recommended_pick(
     *,
     row: pd.Series,
     form_home_probability: float,
@@ -558,24 +548,20 @@ def choose_recommended_value(
     league_boost: int,
 ) -> dict[str, object]:
     candidates = [
-        build_value_candidate("form", "home", form_home_probability, float(row["odds_home_probability"]), float(row["home_odds"])),
-        build_value_candidate("form", "away", form_away_probability, _row_away_probability(row), float(row["away_odds"])),
-        build_value_candidate("hybrid", "home", hybrid_home_probability, float(row["odds_home_probability"]), float(row["home_odds"])),
-        build_value_candidate("hybrid", "away", hybrid_away_probability, _row_away_probability(row), float(row["away_odds"])),
+        build_confidence_candidate("HYBRID", "home", hybrid_home_probability, float(row["odds_home_probability"])),
+        build_confidence_candidate("HYBRID", "away", hybrid_away_probability, _row_away_probability(row)),
+        build_confidence_candidate("FORM", "home", form_home_probability, float(row["odds_home_probability"])),
+        build_confidence_candidate("FORM", "away", form_away_probability, _row_away_probability(row)),
     ]
-    scored = []
     for candidate in candidates:
-        score = candidate["edge"] * 100 + candidate["expected_value"] * 10 + league_boost
-        if candidate["model"] == "hybrid":
+        score = candidate["confidence"] * 10 + league_boost
+        if candidate["model"] == "HYBRID":
+            score += 1.0
+        if candidate["side"] == ("home" if hybrid_home_probability >= hybrid_away_probability else "away") and candidate["model"] == "HYBRID":
             score += 0.5
-        if candidate["odds"] <= 1.55:
-            score -= 1.0
-        elif candidate["odds"] >= 3.0:
-            score -= 0.3
         candidate["score"] = round(score, 4)
-        scored.append(candidate)
-    best = max(scored, key=lambda item: item["score"])
-    if best["expected_value"] < 0.02 or best["edge"] < 0.02:
+    best = max(candidates, key=lambda item: item["score"])
+    if best["confidence"] < 0.06:
         return {
             "side": "SKIP",
             "model": "none",
@@ -586,10 +572,10 @@ def choose_recommended_value(
         }
     return {
         "side": SIDE_LABELS[str(best["side"])],
-        "model": str(best["model"]).upper(),
+        "model": str(best["model"]),
         "probability": round(float(best["probability"]), 4),
         "market_probability": round(float(best["market_probability"]), 4),
-        "expected_value": round(float(best["expected_value"]), 4),
+        "expected_value": None,
         "score": float(best["score"]),
     }
 
@@ -603,4 +589,15 @@ def build_value_candidate(model: str, side: str, probability: float, market_prob
         "edge": probability - market_probability,
         "expected_value": odds * probability - 1.0,
         "odds": odds,
+    }
+
+
+def build_confidence_candidate(model: str, side: str, probability: float, market_probability: float) -> dict[str, float | str]:
+    confidence = abs(probability - 0.5) * 2
+    return {
+        "model": model,
+        "side": side,
+        "probability": probability,
+        "market_probability": market_probability,
+        "confidence": confidence,
     }

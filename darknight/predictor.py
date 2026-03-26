@@ -11,6 +11,7 @@ from .odds import calculate_implied_probabilities
 
 
 FORM_FEATURE_COLUMNS = [
+    "handicap_line",
     "home_win_rate_all",
     "away_win_rate_all",
     "home_recent_win_rate",
@@ -55,7 +56,20 @@ def _normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
         results["sport"] = ""
     if "league" not in results.columns:
         results["league"] = ""
+    if "handicap_line" not in results.columns:
+        results["handicap_line"] = 0.0
+    results["handicap_line"] = pd.to_numeric(results["handicap_line"], errors="coerce").fillna(0.0)
     return results.sort_values("played_at").reset_index(drop=True)
+
+
+def adjusted_scores(game: pd.Series) -> tuple[float, float]:
+    handicap_line = float(game.get("handicap_line", 0.0) or 0.0)
+    return float(game["home_score"]) + handicap_line, float(game["away_score"])
+
+
+def home_covers(game: pd.Series) -> int:
+    adjusted_home, adjusted_away = adjusted_scores(game)
+    return int(adjusted_home > adjusted_away)
 
 
 def _team_games(frame: pd.DataFrame, team: str) -> pd.DataFrame:
@@ -97,8 +111,9 @@ def _compute_team_features(
     wins: list[int] = []
     for _, game in games.iterrows():
         is_home = game["home_team"] == team
-        goals_for = game["home_score"] if is_home else game["away_score"]
-        goals_against = game["away_score"] if is_home else game["home_score"]
+        adjusted_home, adjusted_away = adjusted_scores(game)
+        goals_for = adjusted_home if is_home else adjusted_away
+        goals_against = adjusted_away if is_home else adjusted_home
         margins.append(float(goals_for - goals_against))
         wins.append(int(goals_for > goals_against))
 
@@ -121,9 +136,10 @@ def _compute_head_to_head(frame: pd.DataFrame, home_team: str, away_team: str) -
 
     home_side_wins = 0
     for _, game in games.iterrows():
-        if game["home_team"] == home_team and game["home_score"] > game["away_score"]:
+        adjusted_home, adjusted_away = adjusted_scores(game)
+        if game["home_team"] == home_team and adjusted_home > adjusted_away:
             home_side_wins += 1
-        elif game["away_team"] == home_team and game["away_score"] > game["home_score"]:
+        elif game["away_team"] == home_team and adjusted_away > adjusted_home:
             home_side_wins += 1
 
     return float(home_side_wins / len(games))
@@ -134,6 +150,7 @@ def build_form_features(
     home_team: str,
     away_team: str,
     *,
+    handicap_line: float = 0.0,
     sport: str | None = None,
     league: str | None = None,
     recent_games: int = 5,
@@ -158,6 +175,7 @@ def build_form_features(
     return pd.DataFrame(
         [
             {
+                "handicap_line": float(handicap_line),
                 "home_win_rate_all": home_all["win_rate"],
                 "away_win_rate_all": away_all["win_rate"],
                 "home_recent_win_rate": home_all["recent_win_rate"],
@@ -194,6 +212,7 @@ class FormPredictor:
         home_team: str,
         away_team: str,
         *,
+        handicap_line: float = 0.0,
         sport: str | None = None,
         league: str | None = None,
     ) -> FormPrediction:
@@ -201,6 +220,7 @@ class FormPredictor:
             frame,
             home_team,
             away_team,
+            handicap_line=handicap_line,
             sport=sport,
             league=league,
             recent_games=self.recent_games,
@@ -223,6 +243,7 @@ class FormPredictor:
                 scoped_prior,
                 current_game["home_team"],
                 current_game["away_team"],
+                handicap_line=float(current_game.get("handicap_line", 0.0) or 0.0),
                 sport=current_game.get("sport"),
                 league=current_game.get("league"),
                 recent_games=self.recent_games,
@@ -230,7 +251,7 @@ class FormPredictor:
             rows.append(
                 {
                     **features.iloc[0].to_dict(),
-                    "home_win": int(current_game["home_score"] > current_game["away_score"]),
+                    "home_win": home_covers(current_game),
                 }
             )
         return pd.DataFrame(rows)
@@ -279,6 +300,7 @@ class HybridPredictor:
         home_odds: float,
         away_odds: float,
         draw_odds: float | None = None,
+        handicap_line: float = 0.0,
         sport: str | None = None,
         league: str | None = None,
     ) -> HybridPrediction:
@@ -292,6 +314,7 @@ class HybridPredictor:
             normalized,
             home_team,
             away_team,
+            handicap_line=handicap_line,
             sport=sport,
             league=league,
         )
@@ -339,6 +362,7 @@ class HybridPredictor:
                     if not pd.isna(current_game.get("draw_odds"))
                     else None
                 ),
+                handicap_line=float(current_game.get("handicap_line", 0.0) or 0.0),
             )
             rows.append(
                 {
@@ -347,7 +371,7 @@ class HybridPredictor:
                     "odds_away_probability": odds_prediction.away_probability,
                     "odds_draw_probability": odds_prediction.draw_probability or 0.0,
                     "bookmaker_margin": odds_prediction.bookmaker_margin,
-                    "home_win": int(current_game["home_score"] > current_game["away_score"]),
+                    "home_win": home_covers(current_game),
                 }
             )
         return pd.DataFrame(rows)

@@ -70,6 +70,9 @@ def normalize_results(frame: pd.DataFrame) -> pd.DataFrame:
     results = frame.copy()
     results["played_at"] = pd.to_datetime(results["played_at"], errors="coerce")
     results["gm_ts"] = results["gm_ts"].astype(str).str.zfill(6)
+    if "handicap_line" not in results.columns:
+        results["handicap_line"] = 0.0
+    results["handicap_line"] = pd.to_numeric(results["handicap_line"], errors="coerce").fillna(0.0)
     results["actual_outcome"] = results.apply(compute_actual_outcome, axis=1)
     return results
 
@@ -94,6 +97,7 @@ def settle_single_report(report: pd.DataFrame, results: pd.DataFrame, report_nam
                 "away_team",
                 "home_score",
                 "away_score",
+                "handicap_line",
                 "actual_outcome",
             ]
         ],
@@ -114,6 +118,7 @@ def settle_single_report(report: pd.DataFrame, results: pd.DataFrame, report_nam
                     "away_team",
                     "home_score",
                     "away_score",
+                    "handicap_line",
                     "actual_outcome",
                 ]
             ],
@@ -144,9 +149,10 @@ def settle_single_report(report: pd.DataFrame, results: pd.DataFrame, report_nam
 
 
 def compute_actual_outcome(row: pd.Series) -> str:
-    if row["home_score"] > row["away_score"]:
+    adjusted_home_score = float(row["home_score"]) + float(row.get("handicap_line", 0.0) or 0.0)
+    if adjusted_home_score > float(row["away_score"]):
         return "HOME"
-    if row["away_score"] > row["home_score"]:
+    if float(row["away_score"]) > adjusted_home_score:
         return "AWAY"
     return "DRAW"
 

@@ -33,6 +33,7 @@ EXPECTED_COLUMNS = [
 
 RESULT_PUBLISHED_TEXT = "결과발표"
 NORMAL_GAME_TYPE = "일반"
+HANDICAP_GAME_TYPE = "핸디캡"
 WIN_LABEL = "승"
 DRAW_LABEL = "무"
 LOSE_LABEL = "패"
@@ -139,6 +140,7 @@ class BatmanScraper:
                     "away_team": game.away_team,
                     "home_score": game.home_score,
                     "away_score": game.away_score,
+                    "handicap_line": game.handicap_line,
                     "venue": game.venue,
                     "match_seq": game.match_seq,
                     "home_odds": game.home_odds,
@@ -169,6 +171,7 @@ class BatmanScraper:
                     "status": match.status,
                     "home_team": match.home_team,
                     "away_team": match.away_team,
+                    "handicap_line": match.handicap_line,
                     "venue": match.venue,
                     "match_seq": match.match_seq,
                     "home_odds": match.home_odds,
@@ -205,7 +208,7 @@ class BatmanScraper:
         sport = self._clean_text(cells[2].select_one(".icoGame"))
         league = self._clean_text(cells[2].select_one(".db"))
         game_type = self._clean_text(cells[3].select_one(".badge"))
-        if game_type and game_type != NORMAL_GAME_TYPE:
+        if game_type and game_type not in {NORMAL_GAME_TYPE, HANDICAP_GAME_TYPE}:
             return None
 
         home_team, away_team = self._extract_teams(cells[4])
@@ -219,6 +222,7 @@ class BatmanScraper:
 
         home_odds, draw_odds, away_odds = self._extract_odds(cells[5])
         venue = self._extract_venue(cells[7])
+        handicap_line = self._extract_handicap_line(cells[4])
         match_seq = int(row.attrs.get("data-matchseq", 0) or 0)
 
         return GameResult(
@@ -230,6 +234,7 @@ class BatmanScraper:
             away_team=away_team,
             home_score=home_score,
             away_score=away_score,
+            handicap_line=handicap_line,
             venue=venue,
             match_seq=match_seq,
             home_odds=home_odds,
@@ -249,7 +254,7 @@ class BatmanScraper:
         sport = self._clean_text(cells[2].select_one(".icoGame"))
         league = self._clean_text(cells[2].select_one(".db"))
         game_type = self._clean_text(cells[3].select_one(".badge"))
-        if game_type and game_type != NORMAL_GAME_TYPE:
+        if game_type and game_type not in {NORMAL_GAME_TYPE, HANDICAP_GAME_TYPE}:
             return None
 
         home_team, away_team = self._extract_teams(cells[4])
@@ -263,6 +268,7 @@ class BatmanScraper:
         close_at = self._extract_datetime_from_cell(cells[1], gm_ts)
         home_odds, draw_odds, away_odds = self._extract_odds(cells[5])
         venue = self._extract_venue(cells[7])
+        handicap_line = self._extract_handicap_line(cells[4])
         match_seq = int(row.attrs.get("data-matchseq", 0) or 0)
 
         return UpcomingMatch(
@@ -274,6 +280,7 @@ class BatmanScraper:
             status=status,
             home_team=home_team,
             away_team=away_team,
+            handicap_line=handicap_line,
             venue=venue,
             match_seq=match_seq,
             home_odds=home_odds,
@@ -377,6 +384,18 @@ class BatmanScraper:
     def _extract_venue(self, venue_cell: object) -> str:
         return self._clean_text(venue_cell.select_one(".ttHLayer span")) or self._clean_text(venue_cell)
 
+    def _extract_handicap_line(self, score_cell: object) -> float | None:
+        badge_text = self._clean_text(score_cell.select_one(".udPointBox .udPoint"))
+        if not badge_text:
+            return None
+        match = re.search(r"([+-]?\d+(?:\.\d+)?)", badge_text)
+        if not match:
+            return None
+        value = float(match.group(1))
+        if "H" in badge_text.upper():
+            return value
+        return None
+
     def _extract_int(self, text: str) -> int | None:
         match = re.search(r"-?\d+", text)
         return int(match.group(0)) if match else None
@@ -401,6 +420,8 @@ def load_results_csv(csv_path: str | Path) -> pd.DataFrame:
     for column in ("home_odds", "draw_odds", "away_odds"):
         if column not in frame.columns:
             frame[column] = pd.NA
+    if "handicap_line" not in frame.columns:
+        frame["handicap_line"] = pd.NA
     if "sport" not in frame.columns:
         frame["sport"] = ""
     if "league" not in frame.columns:
