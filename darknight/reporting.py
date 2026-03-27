@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shutil
+from datetime import datetime
 from datetime import date
 from pathlib import Path
 
@@ -24,6 +27,15 @@ def save_daily_report(
     md_path = output_path / f"daily_predictions_{target_date.isoformat()}.md"
     report_frame.to_csv(csv_path, index=False, encoding="utf-8-sig")
     md_path.write_text(to_markdown_report(report_frame, target_date), encoding="utf-8")
+    metadata = _build_report_metadata(
+        report_frame,
+        report_type="daily",
+        csv_path=csv_path,
+        md_path=md_path,
+        extra={"target_date": target_date.isoformat()},
+    )
+    _archive_report(output_path, csv_path, md_path, report_type="daily", report_key=target_date.isoformat())
+    _write_latest_metadata(output_path, report_type="daily", metadata=metadata)
     return csv_path, md_path
 
 
@@ -39,7 +51,71 @@ def save_round_report(
     md_path = output_path / f"round_predictions_{gm_ts}.md"
     report_frame.to_csv(csv_path, index=False, encoding="utf-8-sig")
     md_path.write_text(to_markdown_round_report(report_frame, gm_ts), encoding="utf-8")
+    metadata = _build_report_metadata(
+        report_frame,
+        report_type="round",
+        csv_path=csv_path,
+        md_path=md_path,
+        extra={"gm_ts": gm_ts},
+    )
+    _archive_report(output_path, csv_path, md_path, report_type="round", report_key=gm_ts)
+    _write_latest_metadata(output_path, report_type="round", metadata=metadata)
     return csv_path, md_path
+
+
+def _build_report_metadata(
+    report_frame: pd.DataFrame,
+    *,
+    report_type: str,
+    csv_path: Path,
+    md_path: Path,
+    extra: dict[str, str],
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "report_type": report_type,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "rows": int(len(report_frame)),
+        "csv_path": str(csv_path),
+        "md_path": str(md_path),
+        **extra,
+    }
+    if not report_frame.empty:
+        played_at = pd.to_datetime(report_frame["played_at"], errors="coerce")
+        metadata["first_played_at"] = played_at.min().isoformat() if played_at.notna().any() else ""
+        metadata["last_played_at"] = played_at.max().isoformat() if played_at.notna().any() else ""
+        if "close_at" in report_frame.columns:
+            close_at = pd.to_datetime(report_frame["close_at"], errors="coerce")
+            metadata["last_close_at"] = close_at.max().isoformat() if close_at.notna().any() else ""
+    return metadata
+
+
+def _archive_report(
+    output_path: Path,
+    csv_path: Path,
+    md_path: Path,
+    *,
+    report_type: str,
+    report_key: str,
+) -> None:
+    archive_dir = output_path / "archive" / report_type
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archived_csv = archive_dir / f"{report_type}_{report_key}_{stamp}.csv"
+    archived_md = archive_dir / f"{report_type}_{report_key}_{stamp}.md"
+    shutil.copy2(csv_path, archived_csv)
+    shutil.copy2(md_path, archived_md)
+
+
+def _write_latest_metadata(output_path: Path, *, report_type: str, metadata: dict[str, object]) -> None:
+    latest_path = output_path / "latest_reports.json"
+    payload: dict[str, object] = {}
+    if latest_path.exists():
+        try:
+            payload = json.loads(latest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+    payload[report_type] = metadata
+    latest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def to_markdown_report(report_frame: pd.DataFrame, target_date: date) -> str:

@@ -170,10 +170,10 @@ def run_pipeline(reason: str) -> None:
         print(f"[scheduler] pipeline start reason={reason}", flush=True)
 
         run_stage("sync", build_sync_command(), stage_timeout_seconds)
+        run_stage("predict", build_prediction_command(), stage_timeout_seconds)
         run_stage("settle", build_settle_command(), stage_timeout_seconds)
         run_stage("backtest", build_backtest_command(), stage_timeout_seconds)
         run_stage("simulate", build_simulation_command(), stage_timeout_seconds)
-        run_stage("predict", build_prediction_command(), stage_timeout_seconds)
     finally:
         if lock_path.exists():
             lock_path.unlink()
